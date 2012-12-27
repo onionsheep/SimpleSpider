@@ -24,11 +24,16 @@ public class UrlFilter {
     LinkedList<String> t = this.notinFilter(urls);
     t = this.patternFilter(t, this.matchPatterns, false);
     t = this.patternFilter(t, this.ignorePatterns, true);
+    t = this.notinFilter(urls);
     return t;
   }
 
   public LinkedList<String> notinFilter(final Collection<String> urls) {
     final LinkedList<String> result = new LinkedList<>();
+    if(existedUrls == null || existedUrls.size() == 0){
+      result.addAll(urls);
+      return result;
+    }
     for (final String url : urls) {
       if (!this.existedUrls.contains(url)) {
         result.add(url);

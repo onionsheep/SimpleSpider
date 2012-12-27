@@ -1,5 +1,7 @@
 package org.cong.spider;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -7,6 +9,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.http.HttpEntity;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -22,6 +25,8 @@ public class SpiderManager {
   protected Set<String>   visitedURL;
   protected Set<String>   visitingURL;
 
+  public static int i = 0;
+  
   public SpiderManager() {
     initData();
   }
@@ -29,14 +34,15 @@ public class SpiderManager {
   protected void initData() {
     this.toVisitURL = new LinkedList<>();
     this.toVisitURL.add("http://www.qq.com");
-    this.toVisitURL.add("http://www.baidu.com");
-
+    this.toVisitURL.add("http://www.163.com");
+    this.toVisitURL.add("http://www.taobao.com");
+    
     final String p0 = "(http|https):\\/\\/[\\w\\-_]+(\\.[\\w\\-_]+)+([\\w\\-\\.,@?^=%&amp;:/~\\+#]*[\\w\\-\\@?^=%&amp;/~\\+#])?";
     this.matchPatterns = new HashSet<>();
     this.matchPatterns.add(Pattern.compile(p0));
     ignorePatterns = null;
     paser = new Paser();
-    spiderNum = 20;
+    spiderNum = 10;
     visitedURL = new HashSet<>();
     visitingURL = new HashSet<>();
     visitedURL.add(null);
@@ -53,38 +59,65 @@ public class SpiderManager {
     final HttpEntity entity = spider.getEntity();
     if (entity != null) {
       // 处理entity,得到所有链接
-      String contentType[] = spider.getResponse()
-                                   .getFirstHeader("Content-Type")
-                                   .getValue()
-                                   .split("charset=");
-      String encoding = null;
-      if (contentType.length > 1) {
-        encoding = contentType[1];
-      }
-      final Document doc = this.paser.getDocumentFromEntity(entity, currentURL, encoding);
-      LinkedList<String> urls = this.paser.getAllLinks(doc);
+      LinkedList<String> urls = getAllLinks(spider);
       // 记录页面url和页面中的url的关系
+
+      urls = new UrlFilter(this.matchPatterns, null, null).doFilter(urls);
       
+      StringBuilder sb = new StringBuilder(100);
+      for(String u : urls){
+        sb.append(currentURL);
+        sb.append(" ");
+        sb.append(u);
+        sb.append("\n");
+        i++;
+      }
+      
+      if(i > 50000){
+        System.exit(0);
+      }
+      
+      try {
+        FileUtils.writeStringToFile(new File("test.txt"), sb.toString(), true);
+      }
+      catch (IOException e) {
+        e.printStackTrace();
+      }
+      
+      
+      // FileUtils.writeStringToFile(null, null, true);
       // 筛选所有链接,返回筛选结果
       final UrlFilter filter = new UrlFilter(this.matchPatterns, null, this.visitedURL);
       urls = filter.doFilter(urls);
       // 把筛选结果添加到待访问集合中,spider处理的url添加到已访问集合中
-      
+
       logger.debug(urls);
-      
+
       this.sAdd(this.toVisitURL, urls);
       this.sAdd(this.visitedURL, currentURL);
     }
     // 派出去一个新的蜘蛛
-    while (visitingURL.size() < spiderNum) {
+    while (visitingURL.size() < spiderNum && this.toVisitURL.size() > 1) {
       nextSpider();
     }
   }
 
   /**
-   * 新建一个线程,一个新蜘蛛程
+   * @param spider
+   * @return
    */
-  protected void nextSpider() {
+  protected LinkedList<String> getAllLinks(final Spider spider) {
+    final Document doc = this.paser.getDocumentFromEntity(spider);
+    LinkedList<String> urls = this.paser.getAllLinks(doc);
+    return urls;
+  }
+
+  /**
+   * 新建一个线程,一个新蜘蛛程
+   * 
+   * @return
+   */
+  protected boolean nextSpider() {
     String nexturl = null;
     boolean ready = false;
     while (!ready) {
@@ -94,10 +127,14 @@ public class SpiderManager {
           && !this.sContains(this.visitedURL, nexturl)) {
         ready = true;
       }
+      if (this.toVisitURL.size() == 0) {
+        return false;
+      }
     }
     sAdd(visitingURL, nexturl);
     final Spider s = new Spider(this, nexturl);
     new Thread(s, nexturl).start();
+    return true;
   }
 
   protected synchronized String pullToVisitURL() {
